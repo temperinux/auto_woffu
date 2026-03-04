@@ -360,6 +360,12 @@ def cmd_backfill(args):
         entry_time = random_time(ENTRY_HOUR, ENTRY_MIN - 5, allow_before=True)  # 9:25 ±5 → 9:20–9:30
         exit_time  = random_time(EXIT_HOUR,  EXIT_MIN,  allow_before=True)
 
+        if args.dry_run:
+            print(f"  🔍 {date_str} — would clock in {entry_time[:5]} | out {exit_time[:5]}")
+            created += 1
+            current += timedelta(days=1)
+            continue
+
         try:
             put_workday_slots(token, user_id, current, entry_time, exit_time)
             print(f"  🟢 {date_str} — in {entry_time[:5]} | out {exit_time[:5]}")
@@ -391,6 +397,7 @@ def main():
     p_back = sub.add_parser("backfill", help="Fill in past clock-ins")
     p_back.add_argument("--from", dest="from_date", required=True, help="Start date YYYY-MM-DD")
     p_back.add_argument("--to",   dest="to_date",   required=True, help="End date YYYY-MM-DD")
+    p_back.add_argument("--dry-run", action="store_true", help="Check diary and print what would happen, without actually clocking")
 
     args = parser.parse_args()
 

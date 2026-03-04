@@ -1,0 +1,45 @@
+name: Woffu Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_date:
+        description: 'Start date (YYYY-MM-DD)'
+        required: true
+      to_date:
+        description: 'End date (YYYY-MM-DD)'
+        required: true
+      dry_run:
+        description: 'Dry run (no actual clocking)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pytz
+
+      - name: Run backfill
+        env:
+          WOFFU_DOMAIN: ${{ secrets.WOFFU_DOMAIN }}
+          WOFFU_USER:   ${{ secrets.WOFFU_USER }}
+          WOFFU_PASS:   ${{ secrets.WOFFU_PASS }}
+        run: |
+          echo "Backfill from ${{ github.event.inputs.from_date }} to ${{ github.event.inputs.to_date }} | Dry run: ${{ github.event.inputs.dry_run }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python woffu.py backfill --from ${{ github.event.inputs.from_date }} --to ${{ github.event.inputs.to_date }} --dry-run
+          else
+            python woffu.py backfill --from ${{ github.event.inputs.from_date }} --to ${{ github.event.inputs.to_date }}
+          fi
