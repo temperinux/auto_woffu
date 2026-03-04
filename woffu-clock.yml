@@ -1,0 +1,68 @@
+name: Woffu Auto Fichaje
+
+on:
+  schedule:
+    # ─── ENTRADA: 9:30 hora Madrid ───────────────────────────────────────────
+    # En invierno (CET = UTC+1): 9:30 local = 08:30 UTC
+    # En verano  (CEST = UTC+2): 9:30 local = 07:30 UTC
+    # Usamos 08:25 UTC — el script añade variación aleatoria de hasta +5 min
+    - cron: '25 8 * * 1-5'
+
+    # ─── SALIDA: 18:30 hora Madrid ──────────────────────────────────────────
+    # En invierno (CET = UTC+1): 18:30 local = 17:30 UTC
+    # En verano  (CEST = UTC+2): 18:30 local = 16:30 UTC
+    # Usamos 17:25 UTC — el script añade variación aleatoria de ±5 min
+    - cron: '25 17 * * 1-5'
+
+  # Permite lanzarlo manualmente desde GitHub si necesitas
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Tipo de fichaje'
+        required: true
+        default: 'in'
+        type: choice
+        options:
+          - in
+          - out
+
+jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pytz
+
+      # Detecta si es entrada o salida según la hora UTC del cron
+      - name: Determine clock type
+        id: type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "CLOCK_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -lt "13" ]; then
+              echo "CLOCK_TYPE=in" >> $GITHUB_ENV
+            else
+              echo "CLOCK_TYPE=out" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: Fichar
+        env:
+          WOFFU_DOMAIN: ${{ secrets.WOFFU_DOMAIN }}
+          WOFFU_USER:   ${{ secrets.WOFFU_USER }}
+          WOFFU_PASS:   ${{ secrets.WOFFU_PASS }}
+        run: |
+          echo "🕐 Fichando tipo: $CLOCK_TYPE"
+          python woffu.py clock --type $CLOCK_TYPE
