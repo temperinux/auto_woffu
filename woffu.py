@@ -238,13 +238,48 @@ def auth() -> tuple[str, int]:
 # ─── Comandos ──────────────────────────────────────────────────────────────────
 
 def cmd_clock(args):
-    """Clock in or out now (uses Woffu's automatic toggle)."""
-    token, _ = auth()
-    label    = "IN" if args.type == "in" else "OUT"
+    """Clock in or out now — skips weekends, public holidays and absences."""
+    token, user_id = auth()
+    tz    = pytz.timezone(TIMEZONE)
+    today = datetime.now(tz).date()
+
+    # Check today's diary before clocking
+    print(f"📅 Checking diary for {today}...")
+    try:
+        diaries = get_diaries(token, user_id, today, today)
+        d = diaries[0] if diaries else {}
+
+        if d.get("isWeekend"):
+            print("📅 Today is a weekend — skipping.")
+            return
+
+        if d.get("isHoliday"):
+            print(f"🎉 Today is a public holiday ({d.get('name', '')}) — skipping.")
+            return
+
+        if d.get("absenceEvents"):
+            print("🏖️  Absence registered for today — skipping.")
+            return
+
+        # If clocking in, skip if already clocked in today
+        in_val = d.get("in") or ""
+        if args.type == "in" and in_val and ":" in in_val and not in_val.startswith("_"):
+            print(f"✅ Already clocked in today ({in_val}) — skipping.")
+            return
+
+        print("✅ Working day confirmed.")
+    except Exception as e:
+        # If diary check fails, proceed anyway to avoid missing a sign
+        print(f"⚠️  Could not verify diary ({e}) — clocking anyway.")
+
+    # Clock in/out
+    label = "IN" if args.type == "in" else "OUT"
+    if args.dry_run:
+        print(f"🔍 DRY RUN — would clock {label} now. No request sent.")
+        return
     print(f"⏱  Clocking {label}...")
     sign_id = post_sign_now(token)
-    tz  = pytz.timezone(TIMEZONE)
-    now = datetime.now(tz)
+    now     = datetime.now(tz)
     print(f"✅ {label} clocked: {now.strftime('%Y-%m-%d %H:%M')} (id={sign_id})")
 
 
@@ -351,6 +386,7 @@ def main():
 
     p_clock = sub.add_parser("clock", help="Clock in or out now")
     p_clock.add_argument("--type", choices=["in", "out"], required=True)
+    p_clock.add_argument("--dry-run", action="store_true", help="Check diary and print what would happen, without actually clocking")
 
     p_back = sub.add_parser("backfill", help="Fill in past clock-ins")
     p_back.add_argument("--from", dest="from_date", required=True, help="Start date YYYY-MM-DD")
