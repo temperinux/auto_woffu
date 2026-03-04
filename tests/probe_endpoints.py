@@ -1,5 +1,5 @@
 """
-Probe — verifica signs endpoint y si acepta fecha para backfill
+Probe — verifies all endpoints used by woffu.py
 """
 import requests, os, base64, json, sys
 from datetime import date, timedelta
@@ -15,72 +15,71 @@ PROXIES  = {k: v for k, v in {
 
 def sep(title): print(f"\n{'─'*55}\n  {title}\n{'─'*55}")
 
-# Login
+# ── 1. LOGIN ──────────────────────────────────────────────────
+sep("1. LOGIN")
+
 r = requests.post(
     "https://app.woffu.com/api/svc/accounts/authorization/token",
     data={"grant_type": "password", "username": USER, "password": PASSWORD},
     headers={"Content-Type": "application/x-www-form-urlencoded"},
     timeout=15, proxies=PROXIES,
 )
-token = r.json().get("accessToken")
-p     = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
-uid   = int(p.get("UserId"))
-print(f"✅ Login OK. UserId={uid}")
+print(f"  Status: {r.status_code}")
+body = r.json()
+print(f"  Response keys: {list(body.keys())}")
+
+token = None
+for key in ("accessToken", "access_token", "token", "jwtToken", "jwt", "id_token"):
+    if body.get(key):
+        token = body[key]
+        print(f"  ✅ Token found at key '{key}' ({len(token)} chars)")
+        break
+
+if not token:
+    print("  ❌ Token not found. Available keys:", list(body.keys()))
+    sys.exit(1)
+
+p   = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+uid = int(p.get("UserId") or p.get("nameid") or p.get("sub"))
+print(f"  UserId={uid} | CompanyId={p.get('CompanyId')}")
 
 hdrs = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-# ── SIGNS POST: endpoint confirmado ──────────────────────────
-sep("1. SIGNS POST — endpoint confirmado /api/svc/signs/signs")
-
-base_payload = {
-    "agreementEventId": None,
-    "requestId":        None,
-    "deviceId":         "WebApp",
-    "latitude":         None,
-    "longitude":        None,
-    "timezoneOffset":   -60,
-}
-
-# Primero confirmamos que el endpoint funciona (ficha AHORA — cancela/borra después si no quieres)
-r = requests.post(f"{BASE}/api/svc/signs/signs",
-    json=base_payload, headers=hdrs, timeout=15, proxies=PROXIES)
-print(f"  [{r.status_code}] POST sin fecha (hora actual) → {r.text[:300]}")
-
-# ── BACKFILL: ¿acepta fecha? ──────────────────────────────────
-sep("2. BACKFILL — ¿acepta campo 'date' o 'signDate' para fechas pasadas?")
-
-# Probamos añadir fecha al payload — usamos una fecha futura inofensiva
-DATE_TEST = "2099-01-02T09:35:00"
-
-attempts = [
-    ("con 'date'",          {**base_payload, "date": DATE_TEST}),
-    ("con 'signDate'",      {**base_payload, "signDate": DATE_TEST}),
-    ("con 'Date'",          {**base_payload, "Date": DATE_TEST}),
-    ("con 'dateTime'",      {**base_payload, "dateTime": DATE_TEST}),
-    ("con 'clockDate'",     {**base_payload, "clockDate": DATE_TEST}),
-]
-
-for label, payload in attempts:
-    r = requests.post(f"{BASE}/api/svc/signs/signs",
-        json=payload, headers=hdrs, timeout=15, proxies=PROXIES)
-    mark = "✅" if r.status_code in (200, 201) else "❌"
-    resp_preview = r.text[:150]
-    print(f"  {mark} [{r.status_code}] {label} → {resp_preview}")
-
-# ── SIGNS GET: ¿podemos leer fichajes? ───────────────────────
-sep("3. SIGNS GET — leer fichajes existentes")
+# ── 2. DIARIES ────────────────────────────────────────────────
+sep("2. DIARIES")
 
 today     = date.today()
 week_from = today - timedelta(days=today.weekday())
-week_to   = week_from + timedelta(days=4)
+week_to   = week_from + timedelta(days=6)
 
-for path in [
-    f"/api/svc/signs/signs?fromDate={week_from}&toDate={week_to}",
-    f"/api/svc/signs/signs?userId={uid}&fromDate={week_from}&toDate={week_to}",
-    f"/api/svc/signs/users/{uid}/signs?fromDate={week_from}&toDate={week_to}",
+r = requests.get(
+    f"{BASE}/api/svc/core/diariesquery/users/{uid}/diaries/summary/presence",
+    params={"userId": uid, "fromDate": week_from.strftime("%Y-%m-%d"),
+            "toDate": week_to.strftime("%Y-%m-%d"), "pageSize": 7,
+            "includeHourTypes": "true", "includeDifference": "true"},
+    headers=hdrs, timeout=15, proxies=PROXIES,
+)
+print(f"  Status: {r.status_code}")
+if r.status_code == 200:
+    diaries = r.json().get("diaries", [])
+    print(f"  ✅ {len(diaries)} days received")
+    for d in diaries:
+        flag   = "🎉" if d["isHoliday"] else ("📅" if d["isWeekend"] else "💼")
+        in_val = d.get("in") or ""
+        signed = "✅ clocked" if (in_val and ":" in in_val and not in_val.startswith("_")) else "— not clocked"
+        print(f"     {flag} {d['date'][:10]}  holiday={d['isHoliday']}  weekend={d['isWeekend']}  in={in_val!r}  {signed}")
+else:
+    print(f"  ❌ {r.text[:300]}")
+
+# ── 3. SIGNS POST ─────────────────────────────────────────────
+sep("3. SIGNS POST (date 2099 = harmless)")
+
+for url, payload in [
+    (f"{BASE}/api/svc/signs/signs",
+     {"agreementEventId": None, "requestId": None, "deviceId": "WebApp",
+      "latitude": None, "longitude": None, "timezoneOffset": -60,
+      "date": "2099-01-02T09:35:00"}),
 ]:
-    r = requests.get(BASE + path, headers=hdrs, timeout=15, proxies=PROXIES)
-    mark = "✅" if r.status_code == 200 else "  "
-    print(f"  {mark} [{r.status_code}] GET {path.split('?')[0]}")
-    if r.status_code == 200:
-        print(f"       {r.text[:200]}")
+    r = requests.post(url, json=payload, headers=hdrs, timeout=15, proxies=PROXIES)
+    mark = "✅" if r.status_code in (200, 201) else "❌"
+    print(f"  {mark} [{r.status_code}] POST {url.replace(BASE,'')} → {r.text[:200]}")
