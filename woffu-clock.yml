@@ -1,30 +1,26 @@
-name: Woffu Auto Fichaje
+name: Woffu Auto Clock
 
 on:
   schedule:
-    # ─── ENTRADA: 9:30 hora Madrid ───────────────────────────────────────────
-    # En invierno (CET = UTC+1): 9:30 local = 08:30 UTC
-    # En verano  (CEST = UTC+2): 9:30 local = 07:30 UTC
-    # Usamos 08:25 UTC — el script añade variación aleatoria de hasta +5 min
+    # IN: 9:25 Madrid winter (CET = UTC+1) → 08:25 UTC
     - cron: '25 8 * * 1-5'
-
-    # ─── SALIDA: 18:30 hora Madrid ──────────────────────────────────────────
-    # En invierno (CET = UTC+1): 18:30 local = 17:30 UTC
-    # En verano  (CEST = UTC+2): 18:30 local = 16:30 UTC
-    # Usamos 17:25 UTC — el script añade variación aleatoria de ±5 min
+    # OUT: 18:25 Madrid winter (CET = UTC+1) → 17:25 UTC
     - cron: '25 17 * * 1-5'
 
-  # Permite lanzarlo manualmente desde GitHub si necesitas
   workflow_dispatch:
     inputs:
       type:
-        description: 'Tipo de fichaje'
+        description: 'Clock type'
         required: true
         default: 'in'
         type: choice
-        options:
-          - in
-          - out
+        options: [in, out]
+      dry_run:
+        description: 'Dry run (no actual clocking)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
 
 jobs:
   clock:
@@ -32,37 +28,35 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: pip install requests pytz
 
-      # Detecta si es entrada o salida según la hora UTC del cron
       - name: Determine clock type
-        id: type
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "CLOCK_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
+            echo "DRY_RUN=${{ github.event.inputs.dry_run }}" >> $GITHUB_ENV
           else
             HOUR=$(date -u +%H)
-            if [ "$HOUR" -lt "13" ]; then
-              echo "CLOCK_TYPE=in" >> $GITHUB_ENV
-            else
-              echo "CLOCK_TYPE=out" >> $GITHUB_ENV
-            fi
+            [ "$HOUR" -lt "13" ] && echo "CLOCK_TYPE=in" >> $GITHUB_ENV || echo "CLOCK_TYPE=out" >> $GITHUB_ENV
+            echo "DRY_RUN=false" >> $GITHUB_ENV
           fi
 
-      - name: Fichar
+      - name: Clock
         env:
           WOFFU_DOMAIN: ${{ secrets.WOFFU_DOMAIN }}
           WOFFU_USER:   ${{ secrets.WOFFU_USER }}
           WOFFU_PASS:   ${{ secrets.WOFFU_PASS }}
         run: |
-          echo "🕐 Fichando tipo: $CLOCK_TYPE"
-          python woffu.py clock --type $CLOCK_TYPE
+          echo "Type: $CLOCK_TYPE | Dry run: $DRY_RUN"
+          if [ "$DRY_RUN" = "true" ]; then
+            python woffu.py clock --type $CLOCK_TYPE --dry-run
+          else
+            python woffu.py clock --type $CLOCK_TYPE
+          fi
