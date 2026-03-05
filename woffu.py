@@ -277,6 +277,13 @@ def cmd_clock(args):
     if args.dry_run:
         print(f"🔍 DRY RUN — would clock {label} now. No request sent.")
         return
+
+    # Random sleep 0–5 minutes
+    sleep_secs = random.uniform(0, 5 * 60)
+    sleep_mins, sleep_rem = divmod(int(sleep_secs), 60)
+    print(f"⏳ Waiting {sleep_mins}m {sleep_rem}s before clocking {label}...")
+    time.sleep(sleep_secs)
+
     print(f"⏱  Clocking {label}...")
     sign_id = post_sign_now(token)
     now     = datetime.now(tz)

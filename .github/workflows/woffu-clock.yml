@@ -1,12 +1,6 @@
 name: Woffu Auto Clock
 
 on:
-  schedule:
-    # IN: 9:25 Madrid winter (CET = UTC+1) → 08:25 UTC
-    - cron: '25 8 * * 1-5'
-    # OUT: 18:25 Madrid winter (CET = UTC+1) → 17:25 UTC
-    - cron: '25 17 * * 1-5'
-
   workflow_dispatch:
     inputs:
       type:
@@ -25,7 +19,7 @@ on:
 jobs:
   clock:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -37,26 +31,15 @@ jobs:
       - name: Install dependencies
         run: pip install requests pytz
 
-      - name: Determine clock type
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "CLOCK_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
-            echo "DRY_RUN=${{ github.event.inputs.dry_run }}" >> $GITHUB_ENV
-          else
-            HOUR=$(date -u +%H)
-            [ "$HOUR" -lt "13" ] && echo "CLOCK_TYPE=in" >> $GITHUB_ENV || echo "CLOCK_TYPE=out" >> $GITHUB_ENV
-            echo "DRY_RUN=false" >> $GITHUB_ENV
-          fi
-
       - name: Clock
         env:
           WOFFU_DOMAIN: ${{ secrets.WOFFU_DOMAIN }}
           WOFFU_USER:   ${{ secrets.WOFFU_USER }}
           WOFFU_PASS:   ${{ secrets.WOFFU_PASS }}
         run: |
-          echo "Type: $CLOCK_TYPE | Dry run: $DRY_RUN"
-          if [ "$DRY_RUN" = "true" ]; then
-            python woffu.py clock --type $CLOCK_TYPE --dry-run
+          echo "Type: ${{ github.event.inputs.type }} | Dry run: ${{ github.event.inputs.dry_run }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python woffu.py clock --type ${{ github.event.inputs.type }} --dry-run
           else
-            python woffu.py clock --type $CLOCK_TYPE
+            python woffu.py clock --type ${{ github.event.inputs.type }}
           fi
