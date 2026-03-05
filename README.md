@@ -29,15 +29,9 @@ This repo has two branches depending on how you want to trigger the automatic cl
 
 ## 🚀 Setup
 
-### 1. Clone the branch you want
+### 1. Create your repo from this template
 
-```bash
-# Recommended: cron-job.org version
-git clone -b main https://github.com/YOUR_USERNAME/auto_woffu.git
-
-# Alternative: GitHub native cron
-git clone -b github-cron https://github.com/YOUR_USERNAME/auto_woffu.git
-```
+Go to the template repo → click **"Use this template"** → **"Create a new repository"** → give it a name → set it as **Private** → click **"Create repository"**.
 
 ### 2. Add GitHub Secrets
 
@@ -52,6 +46,19 @@ Go to your repo → **Settings → Secrets and variables → Actions → New rep
 ### 3. Enable workflows
 
 Go to the **Actions** tab in your repo and click **"I understand my workflows, enable them"**.
+
+### 4. Activate the schedule
+
+**If using `github-cron` branch**: make any small edit to activate GitHub's scheduler — no terminal needed:
+
+1. Go to your repo → switch to the `github-cron` branch
+2. Open any file (e.g. `README.md`) → click the ✏️ edit button
+3. Make a tiny change (add a blank line at the end)
+4. Click **"Commit changes"**
+
+That's it — the schedule is now active. ✅
+
+**If using `main` branch**: follow the cron-job.org setup below instead.
 
 ---
 
